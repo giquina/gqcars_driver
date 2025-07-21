@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -6,28 +6,25 @@ import {
   ScrollView,
   Switch,
   Alert,
-  Image 
+  Image,
+  TouchableOpacity 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Card, Button, StatusBadge } from '../shared/components/ui';
 import { colors, spacing, typography } from '../shared/theme';
+import { useAuth } from '../contexts/AuthContext';
 
-const ProfileScreen = () => {
-  const [driverData] = useState({
-    name: 'Alex Johnson',
-    email: 'alex.johnson@email.com',
-    phone: '+1 (555) 123-4567',
-    rating: 4.8,
-    totalTrips: 1247,
-    joinDate: 'March 2023',
-    vehicleInfo: {
-      make: 'Toyota',
-      model: 'Camry',
-      year: '2020',
-      color: 'Silver',
-      licensePlate: 'ABC-1234'
-    }
-  });
+const ProfileScreen = ({ navigation }) => {
+  const { 
+    user, 
+    driverProfile, 
+    signOut, 
+    isVerifiedDriver, 
+    hasPendingVerification,
+    isSuspended,
+    getDriverName,
+    getVerificationProgress
+  } = useAuth();
 
   const [settings, setSettings] = useState({
     pushNotifications: true,
@@ -53,7 +50,7 @@ const ProfileScreen = () => {
   };
 
   const showDocuments = () => {
-    Alert.alert('Documents', 'Document management feature coming soon!');
+    navigation.navigate('DocumentVerification');
   };
 
   const showSupport = () => {
@@ -74,7 +71,18 @@ const ProfileScreen = () => {
       'Are you sure you want to sign out?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Sign Out', style: 'destructive', onPress: () => {} }
+        { 
+          text: 'Sign Out', 
+          style: 'destructive', 
+          onPress: async () => {
+            try {
+              await signOut();
+              // Navigation will be handled automatically by App.js
+            } catch (error) {
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
+            }
+          }
+        }
       ]
     );
   };
@@ -116,24 +124,72 @@ const ProfileScreen = () => {
     </View>
   );
 
+  // Get verification status for badge
+  const getVerificationStatus = () => {
+    if (isVerifiedDriver()) return { status: 'online', text: 'Verified' };
+    if (hasPendingVerification()) return { status: 'busy', text: 'Pending' };
+    if (isSuspended()) return { status: 'offline', text: 'Suspended' };
+    return { status: 'offline', text: 'Unverified' };
+  };
+
+  const verificationStatus = getVerificationStatus();
+  const progress = getVerificationProgress();
+
+  // Don't render if no user data
+  if (!user || !driverProfile) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>Loading profile...</Text>
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      {/* Verification Progress Banner */}
+      {!isVerifiedDriver() && progress < 100 && (
+        <View style={styles.verificationBanner}>
+          <View style={styles.bannerContent}>
+            <Ionicons name="alert-circle-outline" size={24} color={colors.warning} />
+            <View style={styles.bannerText}>
+              <Text style={styles.bannerTitle}>Complete Your Verification</Text>
+              <Text style={styles.bannerSubtitle}>
+                {progress}% complete - Upload remaining documents to start driving
+              </Text>
+            </View>
+            <TouchableOpacity onPress={showDocuments}>
+              <Text style={styles.bannerAction}>Upload</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.progressBarSmall}>
+            <View style={[styles.progressFillSmall, { width: `${progress}%` }]} />
+          </View>
+        </View>
+      )}
+
       <Card style={styles.profileCard}>
         <View style={styles.profileHeader}>
           <View style={styles.avatarContainer}>
             <Image 
-              source={{ uri: 'https://via.placeholder.com/80x80' }}
+              source={{ 
+                uri: driverProfile.documents?.profilePhoto?.url || 'https://via.placeholder.com/80x80/CCCCCC/FFFFFF?text=Driver' 
+              }}
               style={styles.avatar}
             />
-            <StatusBadge status="online" text="Verified" size="small" style={styles.verifiedBadge} />
+            <StatusBadge 
+              status={verificationStatus.status} 
+              text={verificationStatus.text} 
+              size="small" 
+              style={styles.verifiedBadge} 
+            />
           </View>
           <View style={styles.profileInfo}>
-            <Text style={styles.driverName}>{driverData.name}</Text>
-            <Text style={styles.driverEmail}>{driverData.email}</Text>
+            <Text style={styles.driverName}>{getDriverName()}</Text>
+            <Text style={styles.driverEmail}>{user.email}</Text>
             <View style={styles.ratingContainer}>
               <Ionicons name="star" size={16} color={colors.warning} />
-              <Text style={styles.rating}>{driverData.rating}</Text>
-              <Text style={styles.totalTrips}>• {driverData.totalTrips} trips</Text>
+              <Text style={styles.rating}>{driverProfile.rating?.toFixed(1) || '5.0'}</Text>
+              <Text style={styles.totalTrips}>• {driverProfile.totalTrips || 0} trips</Text>
             </View>
           </View>
         </View>
@@ -150,15 +206,23 @@ const ProfileScreen = () => {
         <Text style={styles.sectionTitle}>Driver Stats</Text>
         <View style={styles.statsGrid}>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{driverData.rating}</Text>
+            <Text style={styles.statValue}>{driverProfile.rating?.toFixed(1) || '5.0'}</Text>
             <Text style={styles.statLabel}>Rating</Text>
           </View>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{driverData.totalTrips}</Text>
+            <Text style={styles.statValue}>{driverProfile.totalTrips || 0}</Text>
             <Text style={styles.statLabel}>Total Trips</Text>
           </View>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{driverData.joinDate}</Text>
+            <Text style={styles.statValue}>
+              {driverProfile.createdAt ? 
+                new Date(driverProfile.createdAt.toDate()).toLocaleDateString('en-US', { 
+                  month: 'long', 
+                  year: 'numeric' 
+                }) : 
+                'Recent'
+              }
+            </Text>
             <Text style={styles.statLabel}>Member Since</Text>
           </View>
         </View>
@@ -168,7 +232,10 @@ const ProfileScreen = () => {
         <Text style={styles.sectionTitle}>Vehicle & Documents</Text>
         <MenuRow
           title="Vehicle Information"
-          subtitle={`${driverData.vehicleInfo.year} ${driverData.vehicleInfo.make} ${driverData.vehicleInfo.model}`}
+          subtitle={driverProfile.vehicleInfo ? 
+            `${driverProfile.vehicleInfo.year} ${driverProfile.vehicleInfo.make} ${driverProfile.vehicleInfo.model}` :
+            'No vehicle information'
+          }
           icon="car"
           onPress={showVehicleInfo}
         />
@@ -264,6 +331,67 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+  },
+  
+  loadingText: {
+    fontSize: typography.sizes.md,
+    color: colors.text.secondary,
+  },
+  
+  verificationBanner: {
+    backgroundColor: '#FFF9E6',
+    borderColor: colors.warning,
+    borderWidth: 1,
+    margin: spacing.md,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  
+  bannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
+  },
+  
+  bannerText: {
+    flex: 1,
+    marginHorizontal: spacing.md,
+  },
+  
+  bannerTitle: {
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.semibold,
+    color: colors.text.primary,
+    marginBottom: spacing.xs,
+  },
+  
+  bannerSubtitle: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.secondary,
+  },
+  
+  bannerAction: {
+    fontSize: typography.sizes.sm,
+    color: colors.primary,
+    fontWeight: typography.weights.semibold,
+    padding: spacing.sm,
+  },
+  
+  progressBarSmall: {
+    height: 3,
+    backgroundColor: colors.divider,
+  },
+  
+  progressFillSmall: {
+    height: '100%',
+    backgroundColor: colors.warning,
   },
   
   profileCard: {

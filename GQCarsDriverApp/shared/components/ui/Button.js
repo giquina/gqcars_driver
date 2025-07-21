@@ -64,6 +64,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.danger,
   },
   
+  transparent: {
+    backgroundColor: 'transparent',
+  },
+  
+  surface: {
+    backgroundColor: colors.surface,
+  },
+  
   small: {
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
@@ -108,6 +116,16 @@ const styles = StyleSheet.create({
   
   dangerText: {
     color: colors.text.inverse,
+    fontSize: typography.sizes.md,
+  },
+  
+  transparentText: {
+    color: colors.text.inverse,
+    fontSize: typography.sizes.md,
+  },
+  
+  surfaceText: {
+    color: colors.primary,
     fontSize: typography.sizes.md,
   },
   

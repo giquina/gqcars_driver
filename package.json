@@ -12,6 +12,7 @@
     "@expo/metro-runtime": "~5.0.4",
     "@expo/vector-icons": "^14.1.0",
     "@react-native-async-storage/async-storage": "2.1.2",
+    "@react-native-community/datetimepicker": "^8.4.2",
     "@react-navigation/bottom-tabs": "^6.6.1",
     "@react-navigation/native": "^6.1.18",
     "@react-navigation/stack": "^6.4.1",
@@ -21,7 +22,11 @@
     "expo-location": "~18.1.6",
     "expo-notifications": "~0.31.4",
     "expo-status-bar": "~2.2.3",
+<<<<<<< HEAD
     "firebase": "^10.14.1",
+=======
+    "firebase": "^12.0.0",
+>>>>>>> 16288010ef6d22fa1aafdcaa02e1934d1329b7e7
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "react-native": "0.79.5",
@@ -32,7 +37,15 @@
     "react-native-safe-area-context": "5.4.0",
     "react-native-screens": "~4.11.1",
     "react-native-vector-icons": "^10.0.3",
+<<<<<<< HEAD
     "react-native-web": "^0.20.0"
+=======
+    "react-native-web": "^0.20.0",
+    "expo-linear-gradient": "~14.1.4",
+    "expo-image-picker": "~16.1.1",
+    "expo-haptics": "~14.1.1",
+    "@react-native-community/netinfo": "11.4.1"
+>>>>>>> 16288010ef6d22fa1aafdcaa02e1934d1329b7e7
   },
   "devDependencies": {
     "@babel/core": "^7.20.0"

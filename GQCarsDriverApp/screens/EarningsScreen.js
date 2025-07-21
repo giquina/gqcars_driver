@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { 
   View, 
   Text, 
@@ -9,41 +9,134 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Card, Button } from '../shared/components/ui';
 import { colors, spacing, typography } from '../shared/theme';
+import { earningsService, authService } from '../services';
+import { AuthContext } from '../contexts/AuthContext';
 
 const EarningsScreen = () => {
+  const { user } = useContext(AuthContext);
   const [selectedPeriod, setSelectedPeriod] = useState('today');
+  const [earningsData, setEarningsData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   
-  const earningsData = {
-    today: {
-      total: 247.50,
-      trips: 12,
-      hours: 6.5,
-      tips: 45.00,
-      breakdown: [
-        { time: '2:30 PM', passenger: 'John Smith', amount: 18.50, tip: 5.00 },
-        { time: '1:45 PM', passenger: 'Sarah Johnson', amount: 12.25, tip: 2.50 },
-        { time: '12:30 PM', passenger: 'Mike Wilson', amount: 14.75, tip: 3.00 },
-        { time: '11:15 AM', passenger: 'Emily Davis', amount: 16.80, tip: 4.20 },
-        { time: '10:00 AM', passenger: 'David Brown', amount: 22.30, tip: 6.50 },
-      ]
-    },
-    week: {
-      total: 1247.80,
-      trips: 58,
-      hours: 32.5,
-      tips: 234.50,
-      breakdown: []
-    },
-    month: {
-      total: 4829.30,
-      trips: 242,
-      hours: 128,
-      tips: 892.60,
-      breakdown: []
+  // Initialize earnings data on component mount
+  useEffect(() => {
+    loadEarningsData();
+  }, [user]);
+  
+  // Reload data when period changes
+  useEffect(() => {
+    if (user && earningsData) {
+      loadEarningsData();
+    }
+  }, [selectedPeriod]);
+  
+  const loadEarningsData = async () => {
+    if (!user) return;
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const today = new Date();
+      let data = {};
+      
+      if (selectedPeriod === 'today') {
+        const todayData = await loadTodayData(today);
+        data = { today: todayData };
+      } else if (selectedPeriod === 'week') {
+        const weekData = await loadWeekData(today);
+        data = { week: weekData };
+      } else if (selectedPeriod === 'month') {
+        const monthData = await loadMonthData(today);
+        data = { month: monthData };
+      }
+      
+      setEarningsData(data);
+    } catch (error) {
+      console.error('Error loading earnings data:', error);
+      setError('Failed to load earnings data');
+      // Set fallback data
+      setEarningsData({
+        [selectedPeriod]: {
+          total: 0,
+          trips: 0,
+          hours: 0,
+          tips: 0,
+          breakdown: []
+        }
+      });
+    } finally {
+      setLoading(false);
     }
   };
+  
+  const loadTodayData = async (today) => {
+    today.setHours(0, 0, 0, 0);
+    const dailySummary = await earningsService.getDailySummary(user.uid, today);
+    
+    if (dailySummary && dailySummary.summary) {
+      // Get today's individual trip earnings for breakdown
+      const todayEnd = new Date(today);
+      todayEnd.setHours(23, 59, 59, 999);
+      const todayEarnings = await earningsService.getEarnings(user.uid, today, todayEnd, 10);
+      
+      return {
+        total: dailySummary.summary.totalEarnings || 0,
+        trips: dailySummary.summary.totalTrips || 0,
+        hours: Math.round((dailySummary.summary.onlineTime || 0) / 60 * 10) / 10,
+        tips: dailySummary.summary.tips || 0,
+        breakdown: todayEarnings.map(earning => ({
+          time: earning.completedAt?.toDate ? earning.completedAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+          passenger: 'Passenger', // Anonymized for privacy
+          amount: earning.driverEarnings.netEarning || 0,
+          tip: earning.fareBreakdown.tips || 0
+        }))
+      };
+    }
+    
+    return { total: 0, trips: 0, hours: 0, tips: 0, breakdown: [] };
+  };
+  
+  const loadWeekData = async (today) => {
+    const startOfWeek = new Date(today);
+    const day = startOfWeek.getDay();
+    const diff = startOfWeek.getDate() - day;
+    startOfWeek.setDate(diff);
+    startOfWeek.setHours(0, 0, 0, 0);
+    
+    const weekSummary = await earningsService.getWeeklySummary(user.uid, startOfWeek);
+    
+    if (weekSummary && weekSummary.weeklyTotal) {
+      return {
+        total: weekSummary.weeklyTotal.totalEarnings || 0,
+        trips: weekSummary.weeklyTotal.totalTrips || 0,
+        hours: Math.round((weekSummary.weeklyTotal.onlineTime || 0) / 60 * 10) / 10,
+        tips: weekSummary.weeklyTotal.tips || 0,
+        breakdown: []
+      };
+    }
+    
+    return { total: 0, trips: 0, hours: 0, tips: 0, breakdown: [] };
+  };
+  
+  const loadMonthData = async (today) => {
+    const monthSummary = await earningsService.getMonthlySummary(user.uid, today.getFullYear(), today.getMonth());
+    
+    if (monthSummary && monthSummary.monthlyTotal) {
+      return {
+        total: monthSummary.monthlyTotal.totalEarnings || 0,
+        trips: monthSummary.monthlyTotal.totalTrips || 0,
+        hours: Math.round((monthSummary.monthlyTotal.onlineTime || 0) / 60 * 10) / 10,
+        tips: monthSummary.monthlyTotal.tips || 0,
+        breakdown: []
+      };
+    }
+    
+    return { total: 0, trips: 0, hours: 0, tips: 0, breakdown: [] };
+  };
 
-  const currentData = earningsData[selectedPeriod];
+  const currentData = earningsData ? earningsData[selectedPeriod] : { total: 0, trips: 0, hours: 0, tips: 0, breakdown: [] };
 
   const periods = [
     { key: 'today', label: 'Today' },
@@ -61,6 +154,28 @@ const EarningsScreen = () => {
     return (currentData.total / currentData.hours).toFixed(2);
   };
 
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <Text style={styles.loadingText}>Loading earnings data...</Text>
+      </View>
+    );
+  }
+  
+  if (error) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <Text style={styles.errorText}>{error}</Text>
+        <Button
+          title="Retry"
+          onPress={loadEarningsData}
+          variant="primary"
+          style={styles.retryButton}
+        />
+      </View>
+    );
+  }
+  
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
@@ -421,6 +536,30 @@ const styles = StyleSheet.create({
   
   documentsButton: {
     marginTop: spacing.sm,
+  },
+  
+  centerContent: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    flex: 1,
+    paddingHorizontal: spacing.lg,
+  },
+  
+  loadingText: {
+    fontSize: typography.sizes.lg,
+    color: colors.text.secondary,
+    textAlign: 'center',
+  },
+  
+  errorText: {
+    fontSize: typography.sizes.md,
+    color: colors.danger,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  
+  retryButton: {
+    marginTop: spacing.md,
   },
 });
 
