@@ -1,22 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
   StyleSheet, 
   Alert,
-  Linking 
+  Linking,
+  ScrollView 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Card, Button, StatusBadge } from '../shared/components/ui';
+import { NavigationMap } from '../shared/components/Map';
 import { colors, spacing, typography } from '../shared/theme';
+import locationService from '../services/locationService';
 
 const ActiveTripScreen = () => {
   const [activeTrip, setActiveTrip] = useState({
     id: 'trip_123',
     passengerName: 'John Smith',
     passengerPhone: '+1 (555) 123-4567',
-    pickup: '123 Main St, Downtown',
-    destination: 'Airport Terminal 1',
+    pickup: {
+      address: '123 Main St, Downtown',
+      latitude: 40.7128,
+      longitude: -74.0060,
+    },
+    destination: {
+      address: 'Airport Terminal 1',
+      latitude: 40.6413,
+      longitude: -73.7781,
+    },
     distance: '12.5 mi',
     estimatedEarnings: 18.50,
     estimatedTime: '25 min',
@@ -26,7 +37,61 @@ const ActiveTripScreen = () => {
     pickupETA: '8 min'
   });
 
+  const [driverLocation, setDriverLocation] = useState(null);
   const [tripTimer, setTripTimer] = useState('00:15:32');
+  
+  // Initialize location tracking when component mounts
+  useEffect(() => {
+    initializeLocationTracking();
+    
+    return () => {
+      // Cleanup location tracking when component unmounts
+      locationService.stopTracking();
+    };
+  }, []);
+
+  // Update driver location periodically
+  useEffect(() => {
+    const locationInterval = setInterval(async () => {
+      try {
+        const currentLocation = locationService.getCurrentTrackedLocation();
+        if (currentLocation) {
+          setDriverLocation(currentLocation);
+        } else {
+          // Try to get current location if not tracking
+          const location = await locationService.getCurrentLocation();
+          setDriverLocation(location);
+        }
+      } catch (error) {
+        console.error('Error updating driver location:', error);
+      }
+    }, 5000); // Update every 5 seconds
+
+    return () => clearInterval(locationInterval);
+  }, []);
+
+  // Initialize location tracking
+  const initializeLocationTracking = async () => {
+    try {
+      await locationService.initialize();
+      if (activeTrip) {
+        await locationService.startTracking('driver_123'); // In production, use actual driver ID
+      }
+      
+      // Get initial location
+      const initialLocation = await locationService.getCurrentLocation();
+      if (initialLocation) {
+        setDriverLocation(initialLocation);
+      }
+    } catch (error) {
+      console.error('Error initializing location tracking:', error);
+      Alert.alert(
+        'Location Error',
+        'Unable to access location services. Please enable location permissions for navigation features.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
 
   const getStatusInfo = () => {
     switch (activeTrip?.status) {
@@ -79,9 +144,13 @@ const ActiveTripScreen = () => {
       ? activeTrip.destination 
       : activeTrip.pickup;
     
+    const destinationName = activeTrip?.status === 'passenger_onboard' 
+      ? 'destination' 
+      : 'pickup location';
+    
     Alert.alert(
       'Open Navigation',
-      `Navigate to ${destination}?`,
+      `Navigate to ${destinationName}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Open Maps', onPress: () => {} }
@@ -160,108 +229,102 @@ const ActiveTripScreen = () => {
 
   return (
     <View style={styles.container}>
-      <Card style={styles.statusCard}>
-        <View style={styles.statusHeader}>
-          <StatusBadge 
-            status={statusInfo.color} 
-            text={statusInfo.title}
-            size="large"
-          />
-          <Text style={styles.tripTimer}>{tripTimer}</Text>
-        </View>
-        <Text style={styles.statusDescription}>{statusInfo.description}</Text>
-      </Card>
-
-      <Card style={styles.passengerCard}>
-        <View style={styles.passengerHeader}>
-          <View style={styles.passengerInfo}>
-            <Text style={styles.passengerName}>{activeTrip.passengerName}</Text>
-            <View style={styles.ratingContainer}>
-              <Ionicons name="star" size={16} color={colors.warning} />
-              <Text style={styles.rating}>{activeTrip.rating}</Text>
-            </View>
-          </View>
-          <Button
-            title="Call"
-            variant="primary"
-            size="small"
-            onPress={callPassenger}
-            style={styles.callButton}
-          />
-        </View>
-      </Card>
-
-      <Card style={styles.tripCard}>
-        <Text style={styles.cardTitle}>Trip Details</Text>
-        
-        <View style={styles.locationContainer}>
-          <View style={styles.locationRow}>
-            <Ionicons name="radio-button-on" size={18} color={colors.success} />
-            <View style={styles.locationInfo}>
-              <Text style={styles.locationLabel}>Pickup</Text>
-              <Text style={styles.locationText}>{activeTrip.pickup}</Text>
-              {activeTrip.status === 'en_route_to_pickup' && (
-                <Text style={styles.etaText}>ETA: {activeTrip.pickupETA}</Text>
-              )}
-            </View>
-          </View>
-          
-          <View style={styles.locationDivider} />
-          
-          <View style={styles.locationRow}>
-            <Ionicons name="location" size={18} color={colors.danger} />
-            <View style={styles.locationInfo}>
-              <Text style={styles.locationLabel}>Destination</Text>
-              <Text style={styles.locationText}>{activeTrip.destination}</Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.tripMeta}>
-          <View style={styles.metaItem}>
-            <Ionicons name="car" size={16} color={colors.text.secondary} />
-            <Text style={styles.metaText}>{activeTrip.distance}</Text>
-          </View>
-          <View style={styles.metaItem}>
-            <Ionicons name="time" size={16} color={colors.text.secondary} />
-            <Text style={styles.metaText}>{activeTrip.estimatedTime}</Text>
-          </View>
-          <View style={styles.metaItem}>
-            <Ionicons name="wallet" size={16} color={colors.driver.earnings} />
-            <Text style={[styles.metaText, styles.earningsText]}>
-              ${activeTrip.estimatedEarnings.toFixed(2)}
-            </Text>
-          </View>
-        </View>
-      </Card>
-
-      <View style={styles.actionContainer}>
-        <Button
-          title="Navigate"
-          variant="primary"
-          size="large"
-          onPress={openNavigation}
-          style={styles.navigateButton}
-        />
-        
-        {statusInfo.action && (
-          <Button
-            title={statusInfo.action}
-            variant="success"
-            size="large"
-            onPress={updateTripStatus}
-            style={styles.actionButton}
-          />
-        )}
-        
-        <Button
-          title="Cancel Trip"
-          variant="danger"
-          size="medium"
-          onPress={cancelTrip}
-          style={styles.cancelButton}
+      {/* Navigation Map - Takes up top half of screen */}
+      <View style={styles.mapContainer}>
+        <NavigationMap
+          pickup={activeTrip.pickup}
+          destination={activeTrip.destination}
+          driverLocation={driverLocation}
+          tripStatus={activeTrip.status}
+          onNavigationPress={openNavigation}
+          onStatusUpdate={updateTripStatus}
+          style={styles.map}
         />
       </View>
+
+      {/* Trip details - Scrollable bottom half */}
+      <ScrollView 
+        style={styles.detailsContainer}
+        showsVerticalScrollIndicator={false}
+      >
+        <Card style={styles.statusCard}>
+          <View style={styles.statusHeader}>
+            <StatusBadge 
+              status={statusInfo.color} 
+              text={statusInfo.title}
+              size="large"
+            />
+            <Text style={styles.tripTimer}>{tripTimer}</Text>
+          </View>
+          <Text style={styles.statusDescription}>{statusInfo.description}</Text>
+        </Card>
+
+        <Card style={styles.passengerCard}>
+          <View style={styles.passengerHeader}>
+            <View style={styles.passengerInfo}>
+              <Text style={styles.passengerName}>{activeTrip.passengerName}</Text>
+              <View style={styles.ratingContainer}>
+                <Ionicons name="star" size={16} color={colors.warning} />
+                <Text style={styles.rating}>{activeTrip.rating}</Text>
+              </View>
+            </View>
+            <Button
+              title="Call"
+              variant="primary"
+              size="small"
+              onPress={callPassenger}
+              style={styles.callButton}
+            />
+          </View>
+        </Card>
+
+        <Card style={styles.tripCard}>
+          <Text style={styles.cardTitle}>Trip Details</Text>
+          
+          <View style={styles.locationContainer}>
+            <View style={styles.locationRow}>
+              <Ionicons name="radio-button-on" size={18} color={colors.success} />
+              <View style={styles.locationInfo}>
+                <Text style={styles.locationLabel}>Pickup</Text>
+                <Text style={styles.locationText}>{activeTrip.pickup.address}</Text>
+                {activeTrip.status === 'en_route_to_pickup' && (
+                  <Text style={styles.etaText}>ETA: {activeTrip.pickupETA}</Text>
+                )}
+              </View>
+            </View>
+            
+            <View style={styles.locationDivider} />
+            
+            <View style={styles.locationRow}>
+              <Ionicons name="location" size={18} color={colors.danger} />
+              <View style={styles.locationInfo}>
+                <Text style={styles.locationLabel}>Destination</Text>
+                <Text style={styles.locationText}>{activeTrip.destination.address}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.tripMeta}>
+            <View style={styles.metaItem}>
+              <Ionicons name="car" size={16} color={colors.text.secondary} />
+              <Text style={styles.metaText}>{activeTrip.distance}</Text>
+            </View>
+            <View style={styles.metaItem}>
+              <Ionicons name="time" size={16} color={colors.text.secondary} />
+              <Text style={styles.metaText}>{activeTrip.estimatedTime}</Text>
+            </View>
+            <View style={styles.metaItem}>
+              <Ionicons name="wallet" size={16} color={colors.driver.earnings} />
+              <Text style={[styles.metaText, styles.earningsText]}>
+                ${activeTrip.estimatedEarnings.toFixed(2)}
+              </Text>
+            </View>
+          </View>
+        </Card>
+        
+        {/* Additional bottom spacing for scroll */}
+        <View style={styles.bottomSpacer} />
+      </ScrollView>
     </View>
   );
 };
@@ -270,7 +333,24 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+
+  mapContainer: {
+    flex: 0.6, // Take up 60% of screen height
+  },
+
+  map: {
+    flex: 1,
+  },
+
+  detailsContainer: {
+    flex: 0.4, // Take up 40% of screen height
+    backgroundColor: colors.background,
     padding: spacing.md,
+  },
+
+  bottomSpacer: {
+    height: spacing.xl,
   },
   
   statusCard: {
